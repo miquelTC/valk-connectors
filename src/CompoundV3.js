@@ -88,6 +88,16 @@ const App = () => {
     return ethers.utils.formatUnits(balance, 6)
   }
 
+  // Assets list
+  async function getAssets() {
+    const numAssets = await usdcComet.numAssets()
+    let assetsReq = []
+    for (let i = 0; i < numAssets; i++) {
+      assetsReq.push(usdcComet.getAssetInfo(i))
+    }
+    return await Promise.all(assetsReq)
+  }
+
   // Supply Balance
   async function getSupplyBalance() {
     const balance = await usdcComet.balanceOf(account)
@@ -96,9 +106,10 @@ const App = () => {
   }
 
   // Collateral Balance
+  // You can iterate through all assets provided by getAssets()
   async function getCollateralBalance(asset) {
     const token = new ethers.Contract(asset, tokenABI.abi, provider)
-    const balance = await usdcComet.collateralBalanceOf(account, asset)
+    const balance = await usdcComet.userCollateral(account, asset)
     const decimals = await token.decimals()
     return ethers.utils.formatUnits(balance, decimals)
   }
@@ -128,29 +139,24 @@ const App = () => {
 
   // Health Factor
   async function getHealthFactor() {
-    const numAssets = await usdcComet.numAssets()
-    let assetsReq = []
-    for (let i = 0; i < numAssets; i++) {
-      assetsReq.push(usdcComet.getAssetInfo(i))
-    }
-    const assetsRes = await Promise.all(assetsReq)
+    const borrowBalance = await getBorrowBalance()
+    if (borrowBalance == '0') return 0
+    const assets = await getAssets()
     const collateralReq = []
     const priceReq = []
     const decimalsReq = []
-    for (let i = 0; i < assetsRes.length; i++) {
-      collateralReq.push(
-        usdcComet.collateralBalanceOf(account, assetsRes[i].asset)
-      )
-      priceReq.push(usdcComet.getPrice(assetsRes[i].priceFeed))
-      const token = new ethers.Contract(assetsRes[i].asset, tokenABI, provider)
+    for (let i = 0; i < assets.length; i++) {
+      collateralReq.push(usdcComet.userCollateral(account, assets[i].asset))
+      priceReq.push(usdcComet.getPrice(assets[i].priceFeed))
+      const token = new ethers.Contract(assets[i].asset, tokenABI, provider)
       decimalsReq.push(token.decimals())
     }
     const collateralRes = await Promise.all(collateralReq)
     const priceRes = await Promise.all(priceReq)
     const decimalsRes = await Promise.all(decimalsReq)
-    const healthFactorDen = collateralRes.reduce(
+    const healthFactorNum = collateralRes.reduce(
       (acc, collateralItem, index) => {
-        const assetItem = assetsRes[index]
+        const assetItem = assets[index]
         if (assetItem) {
           acc +=
             ethers.utils.formatUnits(
@@ -164,33 +170,26 @@ const App = () => {
       },
       0
     )
-    return ((await getBorrowBalance()) / healthFactorDen) * 100
+    return (healthFactorNum / borrowBalance) * 100
   }
 
   // LTV
   async function getLtv() {
-    const numAssets = await usdcComet.numAssets()
-    let assetsReq = []
-    for (let i = 0; i < numAssets; i++) {
-      assetsReq.push(usdcComet.getAssetInfo(i))
-    }
-    const assetsRes = await Promise.all(assetsReq)
+    const assets = await getAssets()
     const collateralReq = []
     const priceReq = []
     const decimalsReq = []
-    for (let i = 0; i < assetsRes.length; i++) {
-      collateralReq.push(
-        usdcComet.collateralBalanceOf(account, assetsRes[i].asset)
-      )
-      priceReq.push(usdcComet.getPrice(assetsRes[i].priceFeed))
-      const token = new ethers.Contract(assetsRes[i].asset, tokenABI, provider)
+    for (let i = 0; i < assets.length; i++) {
+      collateralReq.push(usdcComet.userCollateral(account, assets[i].asset))
+      priceReq.push(usdcComet.getPrice(assets[i].priceFeed))
+      const token = new ethers.Contract(assets[i].asset, tokenABI, provider)
       decimalsReq.push(token.decimals())
     }
     const collateralRes = await Promise.all(collateralReq)
     const priceRes = await Promise.all(priceReq)
     const decimalsRes = await Promise.all(decimalsReq)
     const collateralUsd = collateralRes.reduce((acc, collateralItem, index) => {
-      const assetItem = assetsRes[index]
+      const assetItem = assets[index]
       if (assetItem) {
         acc +=
           ethers.utils.formatUnits(collateralItem.balance, decimalsRes[index]) *
@@ -203,21 +202,14 @@ const App = () => {
 
   // Borrow capacity
   async function getBorrowCapacity() {
-    const numAssets = await usdcComet.numAssets()
-    let assetsReq = []
-    for (let i = 0; i < numAssets; i++) {
-      assetsReq.push(usdcComet.getAssetInfo(i))
-    }
-    const assetsRes = await Promise.all(assetsReq)
+    const assets = await getAssets()
     const collateralReq = []
     const priceReq = []
     const decimalsReq = []
-    for (let i = 0; i < assetsRes.length; i++) {
-      collateralReq.push(
-        usdcComet.collateralBalanceOf(account, assetsRes[i].asset)
-      )
-      priceReq.push(usdcComet.getPrice(assetsRes[i].priceFeed))
-      const token = new ethers.Contract(assetsRes[i].asset, tokenABI, provider)
+    for (let i = 0; i < assets.length; i++) {
+      collateralReq.push(usdcComet.userCollateral(account, assets[i].asset))
+      priceReq.push(usdcComet.getPrice(assets[i].priceFeed))
+      const token = new ethers.Contract(assets[i].asset, tokenABI, provider)
       decimalsReq.push(token.decimals())
     }
     const collateralRes = await Promise.all(collateralReq)
@@ -225,7 +217,7 @@ const App = () => {
     const decimalsRes = await Promise.all(decimalsReq)
     const borrowCapacity = collateralRes.reduce(
       (acc, collateralItem, index) => {
-        const assetItem = assetsRes[index]
+        const assetItem = assets[index]
         if (assetItem) {
           acc +=
             ethers.utils.formatUnits(
@@ -303,16 +295,6 @@ const App = () => {
       0
     )
     return totalCollateral
-  }
-
-  // Assets list
-  async function getAssets() {
-    const numAssets = await usdcComet.numAssets()
-    let assetsReq = []
-    for (let i = 0; i < numAssets; i++) {
-      assetsReq.push(usdcComet.getAssetInfo(i))
-    }
-    return await Promise.all(assetsReq)
   }
 
   /*******************************************************

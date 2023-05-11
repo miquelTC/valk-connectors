@@ -66,21 +66,21 @@ const App = () => {
       setWethGatewayInstance(wethGatewayInstance)
 
       const rewardsControllerInstance = new ethers.Contract(
-        '<ADDRESS>',
+        '0x8164Cc65827dcFe994AB23944CBC90e0aa80bFcb',
         RewardsController,
         signer
       )
       setRewardsControllerInstance(rewardsControllerInstance)
 
-      const uiPoolDataProvider = new ethers.Contract(
-        '0xb00A75686293Fea5DA122E8361f6815A0B0AF48E',
-        UiPoolDataProvider,
-        signer
-      )
-      setUiPoolDataProvider(uiPoolDataProvider)
+      // const uiPoolDataProvider = new ethers.Contract(
+      //   '0xb00A75686293Fea5DA122E8361f6815A0B0AF48E',
+      //   UiPoolDataProvider,
+      //   signer
+      // )
+      // setUiPoolDataProvider(uiPoolDataProvider)
 
       const uiIncentiveDataProvider = new ethers.Contract(
-        '0xf4Ce3624c8D047aF8b069D044f00bF6774B4dEc0',
+        '0x265d414f80b0fca9505710e6F16dB4b67555D365',
         UiIncentiveDataProvider,
         signer
       )
@@ -152,22 +152,70 @@ const App = () => {
     )
   }
 
+  // // Unclaimed rewards amounts
+  // async function getUnclaimedRewards() {
+  //   console.log(uiIncentiveDataProvider)
+  //   return await uiIncentiveDataProvider.getReservesIncentivesData(
+  //     '0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e'
+  //   )
+  // }
   // Unclaimed rewards amounts
   async function getUnclaimedRewards() {
+    console.log(uiIncentiveDataProvider)
     return await uiIncentiveDataProvider.getUserReservesIncentivesData(
-      '0xC911B590248d127aD18546B186cC6B324e99F02c',
-      account
+      '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb',
+      '0xed287c5cf0b7124c0c0d1de0db2ff48d61386e61'
     )
   }
 
-  // async function getUnclaimedRewards(tokens, userAddress) {
+  // async function getUnclaimedRewards() {
   //   const [, allUnclaimedRewards] =
-  //     await rewardsControllerInstance.getAllUserRewardsBalance(
-  //       tokens, // Array of aTokens, sTokens or vTokens
-  //       userAddress
+  //     await rewardsControllerInstance.getAllUserRewards(
+  //       getTokens(), // Array of aTokens, sTokens or vTokens
+  //       '0x5ba7fd868c40c16f7adfae6cf87121e13fc2f7a0'
   //     )
-  //   return allUnclaimedRewards
+  //   console.log(allUnclaimedRewards)
+  //   // return allUnclaimedRewards
   // }
+
+  function getTokens() {
+    return [
+      '0x4d5F47FA6A74757f35C14fD3a6Ef8E3C9BC514E8',
+      '0xeA51d7853EEFb32b6ee06b1C12E6dcCA88Be0fFE',
+      '0x0B925eD163218f6662a35e0f0371Ac234f9E9371',
+      '0xC96113eED8cAB59cD8A66813bCB0cEb29F06D2e4',
+      '0x5Ee5bf7ae06D1Be5997A1A72006FE6C607eC6DE8',
+      '0x40aAbEf1aa8f0eEc637E0E7d92fbfFB2F26A8b7B',
+      '0x98C23E9d8f34FEFb1B7BD6a91B7FF122F4e16F5c',
+      '0x72E95b8931767C79bA4EeE721354d6E99a61D004',
+      '0x018008bfb33d285247A21d44E50697654f754e63',
+      '0xcF8d0c70c850859266f5C338b38F9D663181C314',
+      '0x5E8C8A7243651DB1384C0dDfDbE39761E8e7E51a',
+      '0x4228F8895C7dDA20227F6a5c6751b8Ebf19a6ba8',
+      '0xA700b4eB416Be35b2911fd5Dee80678ff64fF6C9',
+      '0xBae535520Abd9f8C85E58929e0006A2c8B372F74',
+      '0x977b6fc5dE62598B08C85AC8Cf2b745874E8b78c',
+      '0x0c91bcA95b5FE69164cE583A2ec9429A569798Ed',
+      '0x23878914EFE38d27C4D67Ab83ed1b93A74D4086a',
+      '0x6df1C1E379bC5a00a7b4C6e67A203333772f45A8',
+      '0xCc9EE9483f662091a1de4795249E24aC0aC2630f',
+      '0xae8593DD575FE29A9745056aA91C4b746eee62C8',
+      '0x3Fe6a295459FAe07DF8A0ceCC36F37160FE86AA9',
+      '0x33652e48e4B74D18520f11BfE58Edd2ED2cEc5A2',
+      '0x7B95Ec873268a6BFC6427e7a28e396Db9D0ebc65',
+      '0x1b7D3F4b3c032a5AE656e30eeA4e8E1Ba376068F',
+      '0x8A458A9dc9048e005d22849F470891b840296619',
+      '0x6Efc73E54E41b27d2134fF9f98F15550f30DF9B1',
+      '0xC7B4c17861357B8ABB91F25581E7263E08DCB59c',
+      '0x8d0de040e8aAd872eC3c33A3776dE9152D3c34ca',
+      '0x2516E7B3F76294e03C42AA4c5b5b4DCE9C436fB8',
+      '0x3D3efceb4Ff0966D34d9545D3A2fa2dcdBf451f2',
+      '0xF6D2224916DDFbbab6e6bd0D1B7034f4Ae0CaB18',
+      '0xF64178Ebd2E2719F2B1233bCb5Ef6DB4bCc4d09a',
+      '0x9A44fd41566876A39655f74971a3A6eA0a17a454',
+      '0xc30808705C01289A3D306ca9CAB081Ba9114eC82',
+    ]
+  }
 
   /*******************************************************
    *                                                     *
@@ -198,12 +246,10 @@ const App = () => {
 
   // aWETH approval - Allow the Weth Gateway contract to burn aWeth, necessary for WITHDRAW
   const aaveAWethApprovalHandler = async () => {
-    console.log(provider)
-    const hugeNumber =
-      '1000000000000000000000000000000000000000000000000000000000'
+    const hugeNumber = '1000000000000000000'
     const tokenInstance = new ethers.Contract(
       '0x7649e0d153752c556b8b23DB1f1D3d42993E83a5',
-      tokenABI.abi,
+      tokenABI,
       signer
     )
     console.log(wethGatewayInstance.address)
@@ -212,9 +258,8 @@ const App = () => {
       account,
       wethGatewayInstance.address
     )
-    // if (allowedAmount == 0) {
+    console.log('alloewed:', allowedAmount)
     await tokenInstance.approve(wethGatewayInstance.address, hugeNumber)
-    // }
   }
 
   // WETH Stable Credit Delegation - Necessary to borrow with stable rate
@@ -262,7 +307,8 @@ const App = () => {
   }
 
   const daiAmount = '5000000000000000000'
-  const etherAmount = '5000000000000000'
+  // const etherAmount = '50000000000000001'
+  const etherAmount = '5'
   const daiBorrowAmount = '2500000000000000000'
   const etherBorrowAmount = '2000000000000000'
 
