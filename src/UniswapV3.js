@@ -71,6 +71,8 @@ const App = () => {
    *                                                     *
    * *****************************************************/
 
+  // These are our examples on Goerli.
+  // In reality, we will create ERC20 instance to retrieve Token parameters (synmbol, decimals...)
   const token0Address = '0xd87ba7a50b2e7e660f678a895e4b72e7cb4ccd9c' // USDC
   const token1Address = '0xdc31ee1784292379fbb2964b3b9c4124d8f89c60' // DAI
   const token0Decimals = 6
@@ -96,7 +98,7 @@ const App = () => {
     return ethers.utils.formatEther(quotedAmount).toString()
   }
 
-  // Get tokenIds of a specific user
+  // Get tokenIds (NFT id or position id) of a specific user
   async function getTokenIds(user) {
     const balance = await positionManager.balanceOf(user)
     const tokenIds = []
@@ -107,7 +109,7 @@ const App = () => {
     return tokenIds
   }
 
-  // Get % Share
+  // Get % Share (pool share)
   async function getSharePct(tokenId) {
     const currentPosition = await positionManager.positions(tokenId)
     const liquidity = currentPosition.liquidity
@@ -122,7 +124,9 @@ const App = () => {
   }
 
   // Get Position data (prices and amounts)
-  async function getPositionData(tokenId) {
+  // In this example I am passing token0Decimals and token1Decimals. In reality we will use ERC20 instance to get this info
+  // To calculate Liquidity USD, sum both token amounts multiplied by their USD rate
+  async function getPositionData(tokenId, token0Decimals, token1Decimals) {
     const currentPosition = await positionManager.positions(tokenId)
     const tokenA = new Token(5, currentPosition.token0, token0Decimals)
     const tokenB = new Token(5, currentPosition.token1, token1Decimals)
@@ -173,6 +177,8 @@ const App = () => {
       .toString()
 
     return {
+      token0: tokenA.address,
+      token1: tokenB.address,
       priceLower,
       priceUpper,
       currentPrice,
@@ -184,15 +190,8 @@ const App = () => {
         position.amount1.quotient.toString(),
         token1Decimals
       ),
+      feeTier: poolData.fee,
     }
-  }
-
-  // Get Amount1 when Amount0 is provided to add liquidity
-  async function getPositionAmount1(tokenId, amount0) {
-    const positionData = await getPositionData(tokenId)
-    const ratio = amount0 / positionData.amount0
-    console.log(ratio * positionData.amount1)
-    return ratio * positionData.amount1
   }
 
   async function getPoolData(poolContract) {
@@ -212,13 +211,19 @@ const App = () => {
     }
   }
 
-  function getTickFromPrice(price, tickSpacing, decimals0, decimals1) {
-    return nearestUsableTick(
-      Math.floor(
-        Math.log(price * 10 ** ((decimals0 + decimals1) / 2)) / Math.log(1.0001)
-      ),
-      tickSpacing
+  function getTickFromPrice(price, decimals0, decimals1) {
+    return Math.floor(
+      Math.log(price * Math.sqrt(10 ** (decimals0 + decimals1))) /
+        Math.log(1.0001)
     )
+  }
+
+  function getPriceFromTick(tick, decimals0, decimals1) {
+    const decimalsScale =
+      tick > 0
+        ? Math.sqrt(10 ** (decimals0 + decimals1))
+        : Math.sqrt(10 ** -(decimals0 + decimals1))
+    return Math.pow(1.0001, tick) / decimalsScale
   }
 
   function getLiquidityFromX(amount, priceUpper, priceCurrent) {
@@ -270,44 +275,32 @@ const App = () => {
    *                                                     *
    * *****************************************************/
 
-  const createNftHandler = async () => {
-    // inputs will be token0Address, token1Address, feeTier and Amount0 or Amount1
-    const tokenA = new Token(5, token0Address, token0Decimals)
-    const tokenB = new Token(5, token1Address, token1Decimals)
-
-    const priceLower = 16.67 //* 10 ** 12
-    const priceUpper = 39.98 // * 10 ** 12
-
-    const currentPoolAddress = computePoolAddress({
-      factoryAddress: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
-      tokenA: tokenA,
-      tokenB: tokenB,
-      fee: '500',
-    })
-
-    const currentPrice = getCurrentPrice(currentPoolAddress)
-
-    const poolContract = new ethers.Contract(
-      currentPoolAddress,
-      UniswapV3Pool,
-      signer
+  // Get the nearest price based on nearest tick
+  function getNearestPrice(desiredPrice, tickSpacing, decimals0, decimals1) {
+    const tick = getTickFromPrice(desiredPrice, decimals0, decimals1)
+    console.log('tickFromPrice', tick)
+    console.log('nearestTick', nearestUsableTick(tick, tickSpacing))
+    const price = getPriceFromTick(
+      nearestUsableTick(tick, tickSpacing),
+      decimals0,
+      decimals1
     )
 
-    const poolData = await getPoolData(poolContract)
+    return price
+  }
 
-    const liquidity = getLiquidityFromX(45000000, priceUpper, currentPrice)
-
-    const tickLower = getTickFromPrice(priceLower, poolData.tickSpacing, 6, 18)
-    const tickUpper = getTickFromPrice(priceUpper, poolData.tickSpacing, 6, 18)
-    console.log(
-      'tickLowTEst',
-      Math.floor(Math.log(priceLower * 10 ** (24 / 2)) / Math.log(1.0001))
-    )
-
-    console.log('liquidity', liquidity)
-    console.log('priceUpper', priceUpper)
-    console.log('currentPrice', currentPrice)
-    console.log('priceLower', priceLower)
+  // Get amount1 from amount0, given a range
+  function getMintAmount1FromAmount0(
+    tokenA,
+    tokenB,
+    currentPrice,
+    priceUpper,
+    tickLower,
+    tickUpper,
+    poolData,
+    amount0
+  ) {
+    const liquidity = getLiquidityFromX(amount0, priceUpper, currentPrice)
 
     const pool = new Pool(
       tokenA,
@@ -325,65 +318,21 @@ const App = () => {
       tickUpper: nearestUsableTick(tickUpper, poolData.tickSpacing),
     })
 
-    const { amount0: amount0Desired, amount1: amount1Desired } =
-      position.mintAmounts
-
-    console.log(
-      'desiredAmounts',
-      amount0Desired.toString(),
-      amount1Desired.toString()
-    )
-    console.log('tickLower', nearestUsableTick(tickLower, poolData.tickSpacing))
-    console.log('tickUpper', nearestUsableTick(tickUpper, poolData.tickSpacing))
-    console.log('currentTick', poolData.tick)
-
-    const params = [
-      token0Address,
-      token1Address,
-      poolData.fee,
-      nearestUsableTick(tickLower, poolData.tickSpacing),
-      nearestUsableTick(tickUpper, poolData.tickSpacing),
-      amount0Desired.toString(),
-      amount1Desired.toString(),
-      amount0Desired.toString(),
-      amount1Desired.toString(),
-      account,
-      Math.floor(Date.now() / 1000) + 60 * 10,
-    ]
-
-    await positionManager.mint(params)
+    return position.mintAmounts.amount1.toString()
   }
 
-  /*******************************************************
-   *                                                     *
-   *                    ADD LIQUIDITY                    *
-   *                                                     *
-   * *****************************************************/
-
-  const increaseLiquidityHandler = async () => {
-    // inputs will be NFT ID, amount0Desired or amount1Desired
-    const tokenId = 57649
-    const amount0Desired = 45000000
-
-    const currentPosition = await positionManager.positions(tokenId)
-
-    const tokenA = new Token(5, currentPosition.token0, 6)
-    const tokenB = new Token(5, currentPosition.token1, 18)
-
-    const currentPoolAddress = computePoolAddress({
-      factoryAddress: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
-      tokenA: tokenA,
-      tokenB: tokenB,
-      fee: currentPosition.fee,
-    })
-
-    const poolContract = new ethers.Contract(
-      currentPoolAddress,
-      UniswapV3Pool,
-      signer
-    )
-
-    const poolData = await getPoolData(poolContract)
+  // Get amount0 from amount1, given a range
+  function getMintAmount0FromAmount1(
+    tokenA,
+    tokenB,
+    currentPrice,
+    priceLower,
+    tickLower,
+    tickUpper,
+    poolData,
+    amount1
+  ) {
+    const liquidity = getLiquidityFromY(amount1, priceLower, currentPrice)
 
     const pool = new Pool(
       tokenA,
@@ -396,36 +345,437 @@ const App = () => {
 
     const position = new Position({
       pool,
-      liquidity: currentPosition.liquidity,
-      tickLower: currentPosition.tickLower,
-      tickUpper: currentPosition.tickUpper,
+      liquidity,
+      tickLower: nearestUsableTick(tickLower, poolData.tickSpacing),
+      tickUpper: nearestUsableTick(tickUpper, poolData.tickSpacing),
     })
 
-    const newLiquidity = Math.floor(
-      (amount0Desired / position.amount0.quotient.toString()) *
-        currentPosition.liquidity
+    return position.mintAmounts.amount0.toString()
+  }
+
+  // Get Ticks and Prices for Mint
+  function getMintTicksAndPrices(
+    poolData,
+    priceLowerDesired,
+    priceUpperDesired
+  ) {
+    const currentPrice = getPriceFromTick(
+      poolData.tick,
+      token0Decimals,
+      token1Decimals
     )
 
-    const positionToAdd = new Position({
-      pool,
-      liquidity: newLiquidity,
-      tickLower: currentPosition.tickLower,
-      tickUpper: currentPosition.tickUpper,
+    const priceLower = getNearestPrice(
+      priceLowerDesired,
+      poolData.tickSpacing,
+      token0Decimals,
+      token1Decimals
+    )
+    const priceUpper = getNearestPrice(
+      priceUpperDesired,
+      poolData.tickSpacing,
+      token0Decimals,
+      token1Decimals
+    )
+    const tickLower = getTickFromPrice(
+      poolData.tick > 0
+        ? priceLower
+        : priceLower / 10 ** (token0Decimals + token1Decimals),
+      token0Decimals,
+      token1Decimals
+    )
+
+    const tickUpper = getTickFromPrice(
+      poolData.tick > 0
+        ? priceUpper
+        : priceUpper / 10 ** (token0Decimals + token1Decimals),
+      token0Decimals,
+      token1Decimals
+    )
+
+    return {
+      currentPrice,
+      priceLower,
+      priceUpper,
+      tickLower,
+      tickUpper,
+    }
+  }
+
+  // Get Amounts to be minted
+  function getMintAmounts(
+    inputIndex,
+    tokenA,
+    tokenB,
+    currentPrice,
+    priceLower,
+    priceUpper,
+    tickLower,
+    tickUpper,
+    poolData,
+    desiredAmount
+  ) {
+    let amount0
+    let amount1
+    if (inputIndex == 0) {
+      amount0 = ethers.utils.parseUnits(
+        desiredAmount,
+        (token0Decimals + token1Decimals) / 2
+      )
+      amount1 = getMintAmount1FromAmount0(
+        tokenA,
+        tokenB,
+        currentPrice,
+        priceUpper,
+        tickLower,
+        tickUpper,
+        poolData,
+        amount0
+      )
+    } else {
+      amount1 = ethers.utils.parseUnits(
+        desiredAmount,
+        (token0Decimals + token1Decimals) / 2
+      )
+      amount0 = getMintAmount0FromAmount1(
+        tokenA,
+        tokenB,
+        currentPrice,
+        priceLower,
+        tickLower,
+        tickUpper,
+        poolData,
+        amount1
+      )
+    }
+    return [amount0, amount1]
+  }
+
+  // Mint NFT when adding liquidity first time for specific assets, feeTier and price range
+  // MUST APPROVE TOKENS BEFORE!!
+  // Normally inputs will be token0Address, token1Address, feeTier, priceLowerDesired, priceUpperDesired, inputIndex, desiredAmount
+  // In this example, I am hardcoding the inputs
+  async function createNftHandler() {
+    // Inputs hardcoded for this example
+    const priceLowerDesired = 100
+    const priceUpperDesired = 150
+    const inputIndex = 0
+    const desiredAmount = '45'
+    const feeTier = '500'
+
+    const tokenA = new Token(5, token0Address, token0Decimals)
+    const tokenB = new Token(5, token1Address, token1Decimals)
+
+    const currentPoolAddress = computePoolAddress({
+      factoryAddress: '0x1F98431c8aD98523631AE4a59f267346ea31F984', // same in all chains
+      tokenA: tokenA,
+      tokenB: tokenB,
+      fee: feeTier,
+    })
+    console.log('currentPoolAddress', currentPoolAddress)
+
+    const poolContract = new ethers.Contract(
+      currentPoolAddress,
+      UniswapV3Pool,
+      signer
+    )
+
+    const poolData = await getPoolData(poolContract)
+
+    const { currentPrice, priceLower, priceUpper, tickLower, tickUpper } =
+      getMintTicksAndPrices(poolData, priceLowerDesired, priceUpperDesired)
+
+    const [amount0, amount1] = getMintAmounts(
+      inputIndex,
+      tokenA,
+      tokenB,
+      currentPrice,
+      priceLower,
+      priceUpper,
+      tickLower,
+      tickUpper,
+      poolData,
+      desiredAmount
+    )
+
+    await positionManager.mint([
+      token0Address,
+      token1Address,
+      poolData.fee,
+      nearestUsableTick(tickLower, poolData.tickSpacing),
+      nearestUsableTick(tickUpper, poolData.tickSpacing),
+      inputIndex == 0
+        ? ethers.utils.parseUnits(desiredAmount, token0Decimals)
+        : ethers.BigNumber.from(amount0).mul(100).div(100),
+      inputIndex == 1
+        ? ethers.utils.parseUnits(desiredAmount, token1Decimals)
+        : ethers.BigNumber.from(amount1).mul(100).div(100),
+      inputIndex == 0
+        ? ethers.utils
+            .parseUnits(desiredAmount, token0Decimals)
+            .mul(98)
+            .div(100)
+        : ethers.BigNumber.from(amount0).mul(95).div(100),
+      inputIndex == 1
+        ? ethers.utils
+            .parseUnits(desiredAmount, token1Decimals)
+            .mul(98)
+            .div(100)
+        : ethers.BigNumber.from(amount1).mul(95).div(100),
+      account,
+      Math.floor(Date.now() / 1000) + 60 * 10,
+    ])
+  }
+
+  // Mint NFT when adding liquidity first time for specific assets, feeTier and price range
+  // MUST APPROVE TOKENS BEFORE!!
+  // Normally inputs will be token0Address, token1Address, feeTier, priceLowerDesired, priceUpperDesired, inputIndex, desiredAmount
+  // In this example, I am hardcoding the inputs
+  async function createNftEthHandler() {
+    // Inputs hardcoded for this example
+    const priceLowerDesired = 20758000000
+    const priceUpperDesired = 200700000000
+    const inputIndex = 0
+    const desiredAmount = '0.000001'
+    const feeTier = '500'
+    const token0Address = '0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6'
+    const token1Address = '0xD87Ba7A50B2E7E660f678A895E4B72E7CB4CCd9C'
+    const token0Decimals = 18
+    const token1Decimals = 6
+
+    const tokenA = new Token(5, token0Address, token0Decimals)
+    const tokenB = new Token(5, token1Address, token1Decimals)
+
+    const currentPoolAddress = computePoolAddress({
+      factoryAddress: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
+      tokenA: tokenA,
+      tokenB: tokenB,
+      fee: feeTier,
     })
 
-    console.log(positionToAdd.amount0.quotient.toString())
-    console.log(positionToAdd.amount1.quotient.toString())
+    const poolContract = new ethers.Contract(
+      currentPoolAddress,
+      UniswapV3Pool,
+      signer
+    )
 
-    const params = [
-      tokenId,
-      positionToAdd.amount0.quotient.toString(),
-      positionToAdd.amount1.quotient.toString(),
-      (positionToAdd.amount0.quotient.toString() * 0.98).toString(),
-      (positionToAdd.amount1.quotient.toString() * 0.98).toString(),
+    const poolData = await getPoolData(poolContract)
+
+    const { currentPrice, priceLower, priceUpper, tickLower, tickUpper } =
+      getMintTicksAndPrices(poolData, priceLowerDesired, priceUpperDesired)
+
+    const [amount0, amount1] = getMintAmounts(
+      inputIndex,
+      tokenA,
+      tokenB,
+      currentPrice,
+      priceLower,
+      priceUpper,
+      tickLower,
+      tickUpper,
+      poolData,
+      desiredAmount
+    )
+    const value =
+      inputIndex == 0
+        ? token0Address == '0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6' // WETH
+          ? ethers.utils.parseUnits(desiredAmount, token0Decimals)
+          : ethers.BigNumber.from(amount1.toString()).mul(105).div(100)
+        : token1Address == '0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6' // WETH
+        ? ethers.utils.parseUnits(desiredAmount, token1Decimals)
+        : ethers.BigNumber.from(amount0).mul(105).div(100)
+
+    // Multicall parameters
+    const positionManagerInterface = new ethers.utils.Interface(PositionManager)
+
+    const mintArgs = [
+      token0Address,
+      token1Address,
+      poolData.fee,
+      nearestUsableTick(tickLower, poolData.tickSpacing),
+      nearestUsableTick(tickUpper, poolData.tickSpacing),
+      inputIndex == 0
+        ? ethers.utils.parseUnits(desiredAmount, token0Decimals)
+        : ethers.BigNumber.from(amount0.toString()).mul(100).div(100),
+      inputIndex == 1
+        ? desiredAmount * 10 ** token1Decimals
+        : ethers.BigNumber.from(amount1.toString()).mul(100).div(100),
+      inputIndex == 0
+        ? ethers.utils
+            .parseUnits(desiredAmount, token0Decimals)
+            .mul(98)
+            .div(100)
+        : ethers.BigNumber.from(amount0.toString()).mul(95).div(100),
+      inputIndex == 1
+        ? ethers.utils
+            .parseUnits(desiredAmount, token1Decimals)
+            .mul(98)
+            .div(100)
+        : ethers.BigNumber.from(amount1.toString()).mul(95).div(100),
+      account,
       Math.floor(Date.now() / 1000) + 60 * 10,
     ]
 
-    await positionManager.increaseLiquidity(params)
+    const mintData = positionManagerInterface.encodeFunctionData('mint', [
+      mintArgs,
+    ])
+
+    const refundData = positionManagerInterface.encodeFunctionData(
+      'refundETH',
+      []
+    )
+    await positionManager.multicall([mintData, refundData], {
+      value,
+    })
+  }
+
+  /*******************************************************
+   *                                                     *
+   *                    ADD LIQUIDITY                    *
+   *                                                     *
+   * *****************************************************/
+
+  // Get Amount1 when Amount0 is provided to add liquidity
+  // IN this example I provide token0Decimals and token1Decimals to simplify. In reality we'll use ERC20 interface
+  async function getPositionAmount1FromAmount0(
+    tokenId,
+    amount0,
+    token0Decimals,
+    token1Decimals
+  ) {
+    const positionData = await getPositionData(
+      tokenId,
+      token0Decimals,
+      token1Decimals
+    )
+    const ratio = amount0 / positionData.amount0
+
+    return ethers.utils.parseUnits(
+      (ratio * positionData.amount1).toFixed(token1Decimals),
+      token1Decimals
+    )
+  }
+
+  // Get Amount0 when Amount1 is provided to add liquidity
+  async function getPositionAmount0FromAmount1(
+    tokenId,
+    amount1,
+    token0Decimals,
+    token1Decimals
+  ) {
+    const positionData = await getPositionData(
+      tokenId,
+      token0Decimals,
+      token1Decimals
+    )
+    const ratio = amount1 / positionData.amount1
+
+    return ethers.utils.parseUnits(
+      (ratio * positionData.amount0).toFixed(token0Decimals),
+      token0Decimals
+    )
+  }
+
+  // inputs will be NFT ID, inputIndex, amount0Desired or amount1Desired
+  // MUST APPROVE TOKENS BEFORE!!
+  async function increaseLiquidityHandler() {
+    // Hardcoded inputs
+    const tokenId = 67073
+    const desiredAmount = '30'
+    const inputIndex = 0
+
+    const amount0 =
+      inputIndex == 0
+        ? ethers.utils.parseUnits(desiredAmount, token0Decimals)
+        : await getPositionAmount0FromAmount1(
+            tokenId,
+            desiredAmount,
+            token0Decimals,
+            token1Decimals
+          )
+    const amount1 =
+      inputIndex == 1
+        ? ethers.utils.parseUnits(desiredAmount, token1Decimals)
+        : await getPositionAmount1FromAmount0(
+            tokenId,
+            desiredAmount,
+            token0Decimals,
+            token1Decimals
+          )
+
+    await positionManager.increaseLiquidity([
+      tokenId,
+      amount0,
+      amount1,
+      amount0.mul(95).div(100),
+      amount1.mul(95).div(100),
+      Math.floor(Date.now() / 1000) + 60 * 10,
+    ])
+  }
+
+  // inputs will be NFT ID, inputIndex, amount0Desired or amount1Desired
+  // MUST APPROVE TOKENS BEFORE!!
+  async function increaseLiquidityEthHandler() {
+    // Hardcoded inputs
+    const tokenId = 67260
+    const desiredAmount = '0.000001'
+    const inputIndex = 0
+    const token0Address = '0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6'
+    const token1Address = '0xD87Ba7A50B2E7E660f678A895E4B72E7CB4CCd9C'
+    const token0Decimals = 18
+    const token1Decimals = 6
+
+    const amount0 =
+      inputIndex == 0
+        ? ethers.utils.parseUnits(desiredAmount, token0Decimals)
+        : await getPositionAmount0FromAmount1(
+            tokenId,
+            desiredAmount,
+            token0Decimals,
+            token1Decimals
+          )
+    const amount1 =
+      inputIndex == 1
+        ? ethers.utils.parseUnits(desiredAmount, token1Decimals)
+        : await getPositionAmount1FromAmount0(
+            tokenId,
+            desiredAmount,
+            token0Decimals,
+            token1Decimals
+          )
+    const value =
+      inputIndex == 0
+        ? token0Address == '0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6' // WETH
+          ? ethers.utils.parseUnits(desiredAmount, token0Decimals)
+          : ethers.BigNumber.from(amount1.toString()).mul(105).div(100)
+        : token1Address == '0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6' // WETH
+        ? ethers.utils.parseUnits(desiredAmount, token1Decimals)
+        : ethers.BigNumber.from(amount0).mul(105).div(100)
+
+    // Multicall parameters
+    const positionManagerInterface = new ethers.utils.Interface(PositionManager)
+
+    const increaseLiquidityArgs = [
+      tokenId,
+      amount0,
+      amount1,
+      amount0.mul(95).div(100),
+      amount1.mul(95).div(100),
+      Math.floor(Date.now() / 1000) + 60 * 10,
+    ]
+
+    const increaseLiquidityData = positionManagerInterface.encodeFunctionData(
+      'increaseLiquidity',
+      [increaseLiquidityArgs]
+    )
+
+    const refundData = positionManagerInterface.encodeFunctionData(
+      'refundETH',
+      []
+    )
+    await positionManager.multicall([increaseLiquidityData, refundData], {
+      value,
+    })
   }
 
   /*******************************************************
@@ -434,23 +784,85 @@ const App = () => {
    *                                                     *
    * *****************************************************/
 
+  // inputs will be NFT ID, liquidity percentage
+  // We use multicall because we withdraw + collect
   const decreaseLiquidityHandler = async () => {
-    // inputs will be NFT ID, liquidity percentage
-    const tokenId = 57649
-    const percentage = 0.5
+    // Hardcode inputs for our example
+    const tokenId = 67073
+    const percentage = 50
 
     const position = await positionManager.positions(tokenId)
     const liquidity = position.liquidity.toString()
 
-    const params = [
+    const positionManagerInterface = new ethers.utils.Interface(PositionManager)
+
+    const decreaseLiquidityArgs = [
       tokenId,
-      Math.floor(liquidity * percentage),
+      ethers.BigNumber.from(liquidity).mul(percentage).div(100),
       0,
       0,
       Math.floor(Date.now() / 1000) + 60 * 10,
     ]
+    const decreaseLiquidityData = positionManagerInterface.encodeFunctionData(
+      'decreaseLiquidity',
+      [decreaseLiquidityArgs]
+    )
 
-    await positionManager.decreaseLiquidity(params)
+    const collectArgs = [
+      tokenId,
+      account,
+      '340282366920938463463374607431768211455',
+      '340282366920938463463374607431768211455',
+    ]
+    const collectData = positionManagerInterface.encodeFunctionData('collect', [
+      collectArgs,
+    ])
+    await positionManager.multicall([decreaseLiquidityData, collectData])
+  }
+
+  // inputs will be NFT ID, liquidity percentage
+  // We use multicall because we withdraw + collect
+  const decreaseLiquidityEthHandler = async () => {
+    // Hardcode inputs for our example
+    const tokenId = 67260
+    const percentage = 50
+
+    const position = await positionManager.positions(tokenId)
+    const liquidity = position.liquidity.toString()
+
+    const positionManagerInterface = new ethers.utils.Interface(PositionManager)
+
+    const decreaseLiquidityArgs = [
+      tokenId,
+      ethers.BigNumber.from(liquidity).mul(percentage).div(100),
+      0,
+      0,
+      Math.floor(Date.now() / 1000) + 60 * 10,
+    ]
+    const decreaseLiquidityData = positionManagerInterface.encodeFunctionData(
+      'decreaseLiquidity',
+      [decreaseLiquidityArgs]
+    )
+    const collectArgs = [
+      tokenId,
+      account,
+      '340282366920938463463374607431768211455',
+      '340282366920938463463374607431768211455',
+    ]
+    const collectData = positionManagerInterface.encodeFunctionData('collect', [
+      collectArgs,
+    ])
+
+    const unwrapWethArgs = [0, account]
+    const unwrapWethData = positionManagerInterface.encodeFunctionData(
+      'unwrapWETH9',
+      unwrapWethArgs
+    )
+    await positionManager.multicall([
+      decreaseLiquidityData,
+      collectData,
+      unwrapWethData,
+    ])
   }
 
   /*******************************************************
@@ -460,17 +872,15 @@ const App = () => {
    * *****************************************************/
 
   async function claimAllHandler() {
-    // const tokenIds = await getTokenIds(account)
-    // for (const tokenId of tokenIds) {
-    //   await positionManager.collect([
-    //     tokenId,
-    //     account,
-    //     '999999999999999999999999999',
-    //     '999999999999999999999999999',
-    //   ])
-    // }
-    const share = await getSharePct('57649')
-    console.log(share)
+    const tokenIds = await getTokenIds(account)
+    for (const tokenId of tokenIds) {
+      await positionManager.collect([
+        tokenId,
+        account,
+        '999999999999999999999999999',
+        '999999999999999999999999999',
+      ])
+    }
   }
 
   return (
@@ -485,27 +895,33 @@ const App = () => {
       <button className="btn btn-primary m-3" onClick={createNftHandler}>
         Create NFT (ERC20-ERC20)
       </button>
+      <button className="btn btn-primary m-3" onClick={createNftEthHandler}>
+        Create NFR (ETH-ERC20)
+      </button>
       <button
         className="btn btn-primary m-3"
         onClick={increaseLiquidityHandler}
       >
         Add liquidity (ERC20-ERC20)
       </button>
-      {/* <button className="btn btn-primary m-3" onClick={addLiquidityETHHandler}>
-        Add liquidity (ERC20-ETH)
-      </button> */}
+      <button
+        className="btn btn-primary m-3"
+        onClick={increaseLiquidityEthHandler}
+      >
+        Add liquidity (ETH-ERC20)
+      </button>
       <button
         className="btn btn-primary m-3"
         onClick={decreaseLiquidityHandler}
       >
         Remove liquidity (ERC20-ERC20)
       </button>
-      {/* <button
+      <button
         className="btn btn-primary m-3"
-        onClick={removeLiquidityETHHandler}
+        onClick={decreaseLiquidityEthHandler}
       >
-        Remove liquidity (ERC20-ETH)
-      </button> */}
+        Remove liquidity (ETH-ERC20)
+      </button>
       <button className="btn btn-primary m-3" onClick={claimAllHandler}>
         Claim All
       </button>
