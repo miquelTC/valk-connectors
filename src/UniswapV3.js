@@ -103,7 +103,7 @@ const App = () => {
     const balance = await positionManager.balanceOf(user)
     const tokenIds = []
     for (let index = 0; index < balance; index++) {
-      const tokenId = await positionManager.tokenOfOwnerByIndex(index)
+      const tokenId = await positionManager.tokenOfOwnerByIndex(user, index)
       tokenIds.push(tokenId)
     }
     return tokenIds
@@ -238,13 +238,15 @@ const App = () => {
     return amount / (Math.sqrt(priceCurrent) - Math.sqrt(priceLower))
   }
 
-  async function getClaimableAmounts(tokenId) {
-    return await positionManager.callStatic.collect([
-      tokenId,
-      account,
-      '999999999999999999999999999',
-      '999999999999999999999999999',
-    ])
+  async function getClaimableAmounts(tokenId, owner) {
+    return await positionManager
+      .connect(owner)
+      .callStatic.collect([
+        tokenId,
+        owner,
+        '999999999999999999999999999',
+        '999999999999999999999999999',
+      ])
   }
 
   /*******************************************************
@@ -872,15 +874,17 @@ const App = () => {
    * *****************************************************/
 
   async function claimAllHandler() {
-    const tokenIds = await getTokenIds(account)
-    for (const tokenId of tokenIds) {
-      await positionManager.collect([
-        tokenId,
-        account,
-        '999999999999999999999999999',
-        '999999999999999999999999999',
-      ])
-    }
+    // const tokenIds = await getTokenIds(account)
+    // for (const tokenId of tokenIds) {
+    //   await positionManager.collect([
+    //     tokenId,
+    //     account,
+    //     '999999999999999999999999999',
+    //     '999999999999999999999999999',
+    //   ])
+    // }
+    const test = await getClaimableAmounts('15627')
+    console.log('test', test)
   }
 
   return (
