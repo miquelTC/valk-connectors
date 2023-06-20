@@ -465,6 +465,7 @@ const App = () => {
     const desiredAmount = '45'
     const feeTier = '500'
 
+    // Start logic
     const tokenA = new Token(5, token0Address, token0Decimals)
     const tokenB = new Token(5, token1Address, token1Decimals)
 
@@ -508,24 +509,24 @@ const App = () => {
       nearestUsableTick(tickUpper, poolData.tickSpacing),
       inputIndex == 0
         ? ethers.utils.parseUnits(desiredAmount, token0Decimals)
-        : ethers.BigNumber.from(amount0).mul(100).div(100),
+        : ethers.BigNumber.from(amount0), // amount0
       inputIndex == 1
         ? ethers.utils.parseUnits(desiredAmount, token1Decimals)
-        : ethers.BigNumber.from(amount1).mul(100).div(100),
+        : ethers.BigNumber.from(amount1), // amount1
       inputIndex == 0
         ? ethers.utils
             .parseUnits(desiredAmount, token0Decimals)
-            .mul(98)
+            .mul(95)
             .div(100)
-        : ethers.BigNumber.from(amount0).mul(95).div(100),
+        : ethers.BigNumber.from(amount0).mul(95).div(100), // amount0Min
       inputIndex == 1
         ? ethers.utils
             .parseUnits(desiredAmount, token1Decimals)
-            .mul(98)
+            .mul(95)
             .div(100)
-        : ethers.BigNumber.from(amount1).mul(95).div(100),
+        : ethers.BigNumber.from(amount1).mul(95).div(100), // amount1Min
       account,
-      Math.floor(Date.now() / 1000) + 60 * 10,
+      Math.floor(Date.now() / 1000) + 60 * 10, // expire date
     ])
   }
 
